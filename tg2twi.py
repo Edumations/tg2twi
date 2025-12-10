@@ -10,6 +10,12 @@ from telegram.request import HTTPXRequest
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from telegram.error import NetworkError
 
+# --- NOVOS IMPORTS PARA O SERVIDOR FALSO ---
+import http.server
+import socketserver
+import threading
+# -------------------------------------------
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -34,6 +40,32 @@ twitter_api = pytwitter.Api(
     access_token=TWITTER_ACCESS_TOKEN,
     access_secret=TWITTER_ACCESS_TOKEN_SECRET,
 )
+
+# --- FUNÇÃO DO SERVIDOR DE HEALTH CHECK ---
+def start_health_check():
+    """Inicia um servidor web simples para satisfazer a verificação de porta do Render."""
+    try:
+        # O Render define a variável PORT automaticamente
+        port = int(os.environ.get("PORT", 8080))
+        
+        class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b"Bot is running!")
+            
+            # Remove logs de acesso do console para não poluir
+            def log_message(self, format, *args):
+                pass
+
+        # Cria e inicia o servidor
+        with socketserver.TCPServer(("0.0.0.0", port), HealthCheckHandler) as httpd:
+            logger.info(f"Health check server listening on port {port}")
+            httpd.serve_forever()
+    except Exception as e:
+        logger.error(f"Failed to start health check server: {e}")
+# ------------------------------------------
 
 # Function to post to Twitter
 def post_to_twitter(text, post_id):
@@ -89,6 +121,12 @@ async def get_updates_with_retry(bot):
 
 # Main bot logic with error handler
 def main():
+    # --- INICIA O SERVIDOR EM SEGUNDO PLANO ---
+    # Isso impede que o Render mate o processo por falta de porta aberta
+    health_thread = threading.Thread(target=start_health_check, daemon=True)
+    health_thread.start()
+    # ------------------------------------------
+
     while True:
         try:
             request = HTTPXRequest(connect_timeout=30.0, read_timeout=60.0)

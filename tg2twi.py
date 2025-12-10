@@ -91,16 +91,20 @@ def post_to_twitter(text, post_id):
         logger.error(f"Error posting to Twitter: {e}")
         raise
 
-
 # Function to handle new messages in the Telegram channel
 async def handle_new_message(update, context):
     try:
-        # Check for channel_post and text
-        if not update.channel_post or not update.channel_post.text:
-            logger.warning(f"Received an update with no text in channel_post. {update}")
+        if not update.channel_post:
             return
 
-        message = update.channel_post.text
+        # Tenta pegar o texto (mensagem normal) OU a legenda (foto/video)
+        message = update.channel_post.text or update.channel_post.caption
+        
+        # Se não tiver nem texto nem legenda (ex: sticker sem nada), ignora
+        if not message:
+            logger.warning(f"Received an update with no text or caption. {update}")
+            return
+
         message_id = update.channel_post.message_id
         logger.info(f"Received message from channel: {message}")
         post_to_twitter(message, message_id)
